@@ -9,6 +9,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	ProjectSection(SolutionItems) = preProject
 		.github\workflows\build.yml = .github\workflows\build.yml
 		README.md = README.md
+		wiring-diagram.png = wiring-diagram.png
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OnanGensetControl.Tests", "OnanGensetControl.Tests\OnanGensetControl.Tests.csproj", "{6933AC1B-AE9C-4FD0-92D1-EE95D7EDCC1D}"
