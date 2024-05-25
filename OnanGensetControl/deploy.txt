@@ -1,0 +1,11 @@
+# Deploy Update Steps
+# Run on RPI
+sudo systemctl stop genset.service
+
+# Rub on build box
+scp -r C:/Users/brian/source/repos/OnanGensetControl/OnanGensetControl/bin/Debug/net8.0/* pi@rpigen:/home/pi/generator-control/
+
+sudo cp /home/pi/generator-control/generator-control.service /lib/systemd/system
+
+# Run on RPI
+sudo systemctl start genset.service

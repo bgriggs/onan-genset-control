@@ -1,0 +1,16 @@
+﻿[Unit]
+Description=Control Generator start/stop
+After=multi-user.target
+
+StartLimitIntervalSec=30
+StartLimitBurst=10
+
+[Service]
+Restart=always
+RestartSec=10s
+
+WorkingDirectory=/home/pi/generator-control
+ExecStart=/home/pi/.dotnet/dotnet /home/pi/generator-control/OnanGensetControl.dll
+
+[Install]
+WantedBy=multi-user.target
