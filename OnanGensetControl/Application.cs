@@ -50,7 +50,7 @@ public partial class Application : BackgroundService
         startRelay = pinControlFactory.CreateRelayControl(startPin, PinMode.Output, PinValue.High, loggerFactory);
         stopRelay = pinControlFactory.CreateRelayControl(stopPin, PinMode.Output, PinValue.High, loggerFactory);
         runCommandInput = pinControlFactory.CreateRelayControl(runControlPin, PinMode.Input, PinValue.Low, loggerFactory);
-        statusInput = pinControlFactory.CreateRelayControl(runningStatusPin, PinMode.InputPullDown, PinValue.Low, loggerFactory);
+        statusInput = pinControlFactory.CreateRelayControl(runningStatusPin, PinMode.InputPullUp, PinValue.High, loggerFactory);
 
         serviceFreq = TimeSpan.FromMilliseconds(Config.GetValue<int>("ServiceFreqMs"));
         stopDuration = TimeSpan.FromMilliseconds(Config.GetValue<int>("StopT4Ms"));
@@ -75,7 +75,7 @@ public partial class Application : BackgroundService
             var sw = Stopwatch.StartNew();
             try
             {
-                var running = statusInput.IsHigh;
+                var running = !statusInput.IsHigh; // Low is running
                 var runControl = runCommandInput.IsHigh;
                 Logger.LogDebug($"RunControl: {runControl}, Running: {running}, Failed: {failureTime is not null}");
 
@@ -183,7 +183,7 @@ public partial class Application : BackgroundService
             // Wait a moment after the start signal before getting the new status
             Logger.LogDebug($"Waiting for {startStatusCheckDelayDuration.TotalMilliseconds}ms before checking status...");
             await Task.Delay(startStatusCheckDelayDuration, stoppingToken);
-            running = statusInput.IsHigh;
+            running = !statusInput.IsHigh; // Low is running
             Logger.LogInformation($"Running status is now: {running}");
         }
         while (!running && tries < startRetries);
@@ -202,7 +202,7 @@ public partial class Application : BackgroundService
         // Wait a moment after the stop signal to let status stabilize
         Logger.LogDebug($"Waiting for {startStatusCheckDelayDuration} before checking status...");
         await Task.Delay(startStatusCheckDelayDuration, stoppingToken);
-        var running = statusInput.IsHigh;
+        var running = !statusInput.IsHigh; // Low is running
         Logger.LogInformation($"Running status is now: {running}");
 
         // See if we were successful
