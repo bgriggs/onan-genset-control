@@ -32,6 +32,9 @@ public partial class Application : BackgroundService
     private readonly TimeSpan skipPrimeDuration;
     private readonly TimeSpan failureResetDuration;
     private DateTime? failureTime;
+    private readonly TimeSpan controlPinDebounce;
+    private bool lastAcceptedRunControl;
+    private DateTime? lastControlPinChange;
 
     public Application(IConfiguration config, ILoggerFactory loggerFactory, IPinControlFactory pinControlFactory, IDateTimeHelper dateTime)
     {
@@ -62,22 +65,51 @@ public partial class Application : BackgroundService
         startStatusCheckDelayDuration = TimeSpan.FromMilliseconds(Config.GetValue<int>("StartStatusCheckDelayMs"));
         skipPrimeDuration = TimeSpan.FromHours(Config.GetValue<int>("SkipPrimeDurationHours"));
         failureResetDuration = TimeSpan.FromSeconds(Config.GetValue<double>("FailureResetDurationSecs"));
-        Logger.LogDebug($"ServiceFreq: {serviceFreq}, StopDuration: {stopDuration}, StartRetries: {startRetries}, RetryWait: {retryWait}, PrimeDuration: {primeDuration}, PostPrimeDelay: {postPrimeDelay}, StartDuration: {startDuration}, SkipPrimeDuration: {skipPrimeDuration}, FailureResetDuration:{failureResetDuration}");
+        controlPinDebounce = TimeSpan.FromMilliseconds(Config.GetValue<int>("ControlPinDebounceMs"));
+
+        Logger.LogDebug($"ServiceFreq: {serviceFreq}, StopDuration: {stopDuration}, StartRetries: {startRetries}, RetryWait: {retryWait}, PrimeDuration: {primeDuration}, PostPrimeDelay: {postPrimeDelay}, StartDuration: {startDuration}, SkipPrimeDuration: {skipPrimeDuration}, FailureResetDuration:{failureResetDuration}, ControlPinDebounce:{controlPinDebounce}");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         Logger.LogInformation("Starting main loop");
 
-        var lastRunControlState = false;
+        var lastRunControlPinState = false;
         while (!stoppingToken.IsCancellationRequested)
         {
             var sw = Stopwatch.StartNew();
             try
             {
                 var running = !statusInput.IsHigh; // Low is running
-                var runControl = runCommandInput.IsHigh;
-                Logger.LogDebug($"RunControl: {runControl}, Running: {running}, Failed: {failureTime is not null}");
+                var runControlPin = runCommandInput.IsHigh;
+                Logger.LogDebug($"RunControlPin: {runControlPin}, Running: {running}, Failed: {failureTime is not null}");
+
+                // Update control pin debounce on pin change
+                if (runControlPin != lastRunControlPinState)
+                {
+                    if (lastControlPinChange.HasValue && DateTime.Now - lastControlPinChange.Value < controlPinDebounce)
+                    {
+                        Logger.LogWarning($"Control pin change too soon from {lastRunControlPinState} to {runControlPin}. Last change was {DateTime.Now - lastControlPinChange.Value} ago.");
+                    }
+
+                    lastControlPinChange = DateTime.Now;
+                    lastRunControlPinState = runControlPin;
+                }
+
+                var runControl = lastAcceptedRunControl;
+                // Check for debounce period met before accepting new control pin value
+                if (lastAcceptedRunControl != runControlPin)
+                {
+                    if (lastControlPinChange.HasValue && DateTime.Now - lastControlPinChange.Value >= controlPinDebounce)
+                    {
+                        runControl = runControlPin;
+                        Logger.LogDebug($"Control pin change debounce period met. Accepting new value: {lastAcceptedRunControl}.");
+                    }
+                    else // Skip processing control pin change
+                    {
+                        Logger.LogDebug($"Ignoring control pin change within debounce period. Current value remains: {runControlPin}.");
+                    }
+                }
 
                 // Relay states are inverted--low is on, high is off
                 var startRelayState = !startRelay.IsHigh;
@@ -107,7 +139,7 @@ public partial class Application : BackgroundService
                 }
 
                 // See if there was a command change to be processed
-                if (runControl != lastRunControlState || (failedDiff.HasValue && failedDiff.Value > failureResetDuration))
+                if (runControl != lastAcceptedRunControl || (failedDiff.HasValue && failedDiff.Value > failureResetDuration))
                 {
                     if (failedDiff.HasValue && failedDiff.Value > failureResetDuration)
                     {
@@ -116,7 +148,7 @@ public partial class Application : BackgroundService
                     }
                     else
                     {
-                        Logger.LogInformation($"Processing RunControl state changing from {lastRunControlState} to {runControl}...");
+                        Logger.LogInformation($"Processing RunControl state changing from {lastAcceptedRunControl} to {runControl}...");
                     }
 
                     // When run command goes active, start the generator
@@ -130,8 +162,9 @@ public partial class Application : BackgroundService
                         await ExecuteStopSequence(stoppingToken);
                     }
 
-                    lastRunControlState = runControl;
+                    lastAcceptedRunControl = runControl;
                 }
+                lastRunControlPinState = runControlPin;
             }
             catch (Exception ex)
             {
